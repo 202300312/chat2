@@ -1,0 +1,6 @@
+v15 시작 방법
+
+1. 이 폴더를 Desktop에 놓으세요.
+2. run_windows.bat 더블클릭 또는 아래 명령어 실행:
+C:\Users\jh869\envchat\.venv\Scripts\python.exe -m streamlit run app.py --server.port 8515
+3. http://localhost:8515 접속

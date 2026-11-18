@@ -1,0 +1,87 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}html,body{min-height:100%;overflow:auto}body{margin:0;font:17px 'Malgun Gothic',Arial,sans-serif;color:#23452c;background:#f9fcf5}.app{padding:14px}.palette{display:flex;flex-wrap:wrap;gap:10px;padding:13px;background:#edf6e6;border:1px solid #c8dfb9;border-radius:12px;margin-bottom:12px}.paletteTitle{width:100%;font-weight:700;font-size:20px}.facility{display:flex;align-items:center;gap:7px;cursor:grab;border:1px solid #b9ccd2;border-radius:9px;background:white;padding:11px 14px;touch-action:none;user-select:none;min-height:55px}.facility:hover,.facility.active{border-color:#098b68;background:#e7f5ee}.facility svg{width:36px;height:36px;flex:none}.tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}.tools button{background:#fff;border:1px solid #aac2cf;border-radius:7px;padding:12px 16px;cursor:pointer;font-weight:bold}.tools button:hover{background:#e6f4ef}.tools .delete{color:#b3263e}.tools span{margin-left:auto;color:#536879;font-size:16px}.area{border:1px solid #b5cda6;border-radius:10px;overflow:hidden;background:white}.area svg{display:block;width:100%;height:auto;max-height:525px;min-height:250px;touch-action:none;user-select:none}.item{cursor:grab;touch-action:none}.selectedRect{fill:none;stroke:#1164af;stroke-width:.055;stroke-dasharray:.14 .08;pointer-events:none}.handle{cursor:nwse-resize;fill:white;stroke:#0869bb;stroke-width:.05;pointer-events:all;touch-action:none}.rotateHandle{fill:#e8fff4;stroke:#068c69;stroke-width:.055;cursor:grab;pointer-events:all;touch-action:none}.desc{color:#536879;font-size:17px;line-height:1.75;margin:9px 0}.ghost{position:fixed;z-index:999;pointer-events:none;background:#e4f4ec;border:2px dashed #17a17b;border-radius:8px;padding:9px 13px;transform:translate(-50%,-50%);font-weight:700;white-space:nowrap;box-shadow:0 3px 10px #9998}.mark{fill:#426478;pointer-events:none}.outline{stroke:#55768a;stroke-width:.045}.svgIcon{pointer-events:none}.itemLabel{pointer-events:none;font-weight:700;paint-order:stroke;stroke:white;stroke-width:.055;fill:#1e3945}.mini{font-size:18px;color:#355d41;font-weight:650;line-height:1.65;white-space:normal;overflow-wrap:break-word;max-width:100%;margin:3px 0 12px;padding:11px 14px;border-radius:10px;background:#eef8e9;border:1px solid #d0e7c7}
+
+/* v15: palette on the LEFT, all built-in facilities visible without scrolling. */
+.designerGrid{display:grid;grid-template-columns:minmax(225px,255px) minmax(0,1fr);gap:12px;align-items:start;width:100%}
+.designerGrid .palette{display:flex;flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:5px;overflow:visible;max-height:none;margin:0;padding:10px;border-radius:12px}
+.designerGrid .paletteTitle{width:100%;margin:0 0 5px 0;flex:0 0 auto;font-size:18px;white-space:normal}
+.designerGrid .facility{width:100%;flex:0 0 auto;min-height:36px;padding:4px 8px;gap:8px;font-size:14px;line-height:1.2;white-space:normal;border-radius:8px}
+.designerGrid .facility svg{width:25px;height:25px}
+.canvasCol{min-width:0;width:100%}
+.app{padding:6px 4px;width:100%;max-width:1580px;margin:0 auto;min-height:100%;overflow:visible}
+.area svg{max-height:615px}
+@media(max-width:850px){.designerGrid{grid-template-columns:minmax(180px,215px) minmax(0,1fr);gap:8px}.designerGrid .facility{font-size:12px;padding:3px 5px;gap:4px}.designerGrid .facility svg{width:22px;height:22px}.tools button{padding:8px 9px}}
+</style></head><body><div class="app"><div class="mini" role="note">우리 학교 강당 환경을 개선할 수 있는 배치를 생각해 보세요.</div><div class="designerGrid"><div id="palette" class="palette"><div class="paletteTitle">🌿 친환경 시설 선택</div></div><div class="canvasCol"><div class="tools"><button id="rotateLeft">↶ -15°</button><button id="rotateRight">↷ +15°</button><button id="delete" class="delete">✕ 선택 시설 삭제</button><button id="unselect">선택 해제</button><span id="status">시설을 선택하세요</span></div><div class="area"><svg id="floor" xmlns="http://www.w3.org/2000/svg"></svg></div></div></div><div class="desc">① 시설을 끌어 강당에 놓기 · ② 강당 안 시설을 드래그해 이동 · ③ 위쪽 초록 회전점을 드래그해 360° 회전 · ④ Delete 키로 삭제</div></div>
+<script>
+'use strict';
+const S='http://www.w3.org/2000/svg';const floor=document.querySelector('#floor'),palette=document.querySelector('#palette'),status=document.querySelector('#status');
+let props={design:{room_w:20,room_h:15,items:[]},catalog:{}},selection=null,pending=null,gesture=null,ghost=null;
+const glyphs={
+ stage:'<rect x="3" y="12" width="26" height="14" rx="2" fill="#7d6cb1"/><path d="M6 7h20M8 7v18M24 7v18M11 16h10" stroke="white" stroke-width="2"/>',
+ seat:'<rect x="7" y="6" width="18" height="16" rx="4" fill="#55a4ce"/><path d="M6 18h20v8H6z" fill="#a1d7f0" stroke="#306c94" stroke-width="1.5"/>',
+ aisle:'<path d="M16 4v24M16 4l-6 7m6-7 6 7m-6 17-6-7m6 7 6-7" stroke="#587e9c" stroke-width="2.5" fill="none"/>',
+ exit:'<path d="M8 28V4h17v24M11 16h19m-7-6 7 6-7 6" fill="none" stroke="#35936b" stroke-width="2.6"/>',
+ led:'<path d="M9 14a7 7 0 0 1 14 0c0 4-4 6-4 9h-6c0-3-4-5-4-9" fill="#ffdb6e" stroke="#bc861f" stroke-width="2"/><path d="M13 27h6m-5 3h4M16 2V0M4 10 1 8m26 2 3-2" stroke="#bc861f" stroke-width="2"/>',
+ kinetic:'<path d="M5 25h23v4H5z" fill="#d29b62"/><path d="M7 19c4-8 6-9 11-5l5 7H9z" fill="#efa867"/><path d="m21 1-6 12h6l-3 10 12-15h-7l3-7" fill="#f9d45d" stroke="#b88a19"/>',
+ recycle:'<path d="m16 3 8 12h-7m7 0 4-3-1 8-12 1 3-5m-12-5-3 7 7 9 3-5M6 9l-3 9" fill="none" stroke="#218764" stroke-width="2.5"/>',
+ rest:'<rect x="5" y="11" width="22" height="16" rx="5" fill="#b4a0d1"/><path d="M8 27v4m17-4v4" stroke="#665198" stroke-width="2"/>',
+ ramp:'<path d="M3 27h27V5z" fill="#a3d09a" stroke="#3a8c63" stroke-width="2"/><path d="m6 25 21-16" stroke="white" stroke-width="2"/>',
+ solar:'<path d="m4 6 22-2 3 21-22 2z" fill="#68b2dd" stroke="#286a93" stroke-width="2"/><path d="m11 5 3 21m6-21 3 20M5 13l22-2M6 20l22-2" stroke="#ecf7ff" stroke-width="1.5"/>',
+ cooling:'<circle cx="16" cy="16" r="4" fill="#459aac"/><path d="M16 12C2 9 10-2 19 8M19 17c10-10 19 5 4 8M14 19C8 32 0 17 12 14" fill="#8ad7e1" stroke="#478eaa"/>',
+ custom:'<path d="M15 29C4 24 7 9 26 5c2 17-7 23-11 24z" fill="#7bcaa1" stroke="#26835b" stroke-width="2"/><path d="M10 28 23 12" stroke="#26835b" stroke-width="2"/>',
+ reusable:'<path d="M8 7h16l-2 20H10z" fill="#94cbab" stroke="#378563" stroke-width="2"/><path d="M6 7h20M12 3h8" stroke="#378563" stroke-width="2"/>',
+ refill:'<path d="M8 10h16l-2 17H10z" fill="#a6daf0" stroke="#4388ad" stroke-width="2"/><path d="M16 3v7M11 3h10" stroke="#4388ad" stroke-width="2"/>',
+ sign:'<rect x="6" y="4" width="20" height="19" rx="2" fill="#d5efb2" stroke="#588a47" stroke-width="2"/><path d="M16 23v7M10 11h12M10 16h9" stroke="#588a47" stroke-width="2"/>',
+ reuse:'<path d="M5 12h22v16H5z" fill="#c2dba2" stroke="#628d52" stroke-width="2"/><path d="M12 12V7h8v5M11 19h10" stroke="#628d52" stroke-width="2"/>'};
+const room=()=>props.design||{room_w:20,room_h:15,items:[]};const cat=()=>props.catalog||{};const snap=n=>Math.round(n*20)/20;const clamp=(v,a,b)=>Math.max(a,Math.min(v,b));
+function E(tag,attrs={},parent=floor){let el=document.createElementNS(S,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);parent.appendChild(el);return el}
+function loc(ev){let m=floor.getScreenCTM();if(!m)return{x:0,y:0};let p=floor.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;return p.matrixTransform(m.inverse())}
+function emit(obj){window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setComponentValue',value:{...obj,nonce:Date.now()+'-'+Math.random()}},'*')}
+function height(){/* fixed-size editor: prevent iframe height growth and page scroll inflation */}
+function icon(kind,parent,cx,cy,sz){const g=E('g',{class:'svgIcon',transform:`translate(${cx-sz/2} ${cy-sz/2}) scale(${sz/32})`},parent);g.innerHTML=glyphs[kind]||glyphs.custom}
+const helpText={
+ stage:'공연을 진행하는 무대입니다. 예: 무대 위에 고효율 LED 조명 배치.',
+ seat:'관객이 앉는 구역입니다. 조명 장치가 관객석을 직접 차지하는지 검토하세요.',
+ aisle:'관객이 이동하는 통로입니다.',exit:'관객 출입에 사용하는 문입니다.',
+ led:'기존 조명을 고효율 LED로 교체해 전력 사용을 줄입니다. 예: 무대 조명 교체.',
+ kinetic:'관객의 발구름을 이용하는 체험입니다. 예: 별도 발전 체험존. 실제 전력 생산은 제한적일 수 있습니다.',
+ recycle:'종이·플라스틱을 따로 모아 재활용을 돕습니다. 예: 출입구 근처 분리배출함.',
+ rest:'관객이 휴식할 수 있는 공간입니다.',ramp:'이동을 돕는 경사로 모형입니다.',
+ solar:'태양광 패널입니다. 실내 배치만으로 발전 효과가 확인되지는 않습니다.',
+ reusable:'다회용 컵을 반납해 일회용품 사용을 줄입니다.',
+ refill:'개인 물병에 물을 보충해 일회용 생수병을 줄입니다.',
+ sign:'관객에게 기후행동과 분리배출 방법을 안내합니다.',
+ reuse:'다시 사용할 수 있는 물품을 빌려 자원 낭비를 줄입니다.',
+ cooling:'효율이 높은 냉난방 장치를 활용합니다. 실제 절감 효과는 운전 조건에 따라 달라집니다.'
+};
+function renderPalette(){palette.querySelectorAll('.facility').forEach(x=>x.remove());for(const [kind,spec] of Object.entries(cat())){let b=document.createElement('div');b.className='facility';b.dataset.kind=kind;b.innerHTML=`<svg viewBox="0 0 32 32">${glyphs[kind]||glyphs.custom}</svg>`;let sp=document.createElement('span');sp.textContent=spec[0];b.append(sp);b.title=(helpText[kind]||'학생이 추가한 시설입니다. 환경적 효과와 실현 가능성을 검토해 보세요.')+'\n드래그하여 강당에 놓거나 클릭 후 강당을 클릭하세요.';b.addEventListener('pointerdown',e=>begin(e,{type:'new',kind},b));palette.append(b)}}
+function render(){let d=room(),w=+d.room_w||20,h=+d.room_h||15;floor.setAttribute('viewBox',`${-1.25} ${-1.15} ${w+2.5} ${h+2.45}`);floor.style.aspectRatio=`${w+2.5}/${h+2.45}`;floor.replaceChildren();E('rect',{x:-1.25,y:-1.15,width:w+2.5,height:h+2.45,fill:'#f8fbfc'});
+ E('rect',{x:0,y:0,width:w,height:h,fill:'white',stroke:'#607b8d','stroke-width':.08});for(let x=1;x<w;x++)E('line',{x1:x,y1:0,x2:x,y2:h,stroke:'#e8eff3','stroke-width':.03,'pointer-events':'none'});for(let y=1;y<h;y++)E('line',{x1:0,y1:y,x2:w,y2:y,stroke:'#e8eff3','stroke-width':.03,'pointer-events':'none'});
+ E('line',{x1:0,y1:-.6,x2:w,y2:-.6,stroke:'#446779','stroke-width':.035});E('line',{x1:0,y1:-.8,x2:0,y2:-.4,stroke:'#446779','stroke-width':.035});E('line',{x1:w,y1:-.8,x2:w,y2:-.4,stroke:'#446779','stroke-width':.035});E('text',{x:w/2,y:-.77,'text-anchor':'middle','font-size':.38,class:'mark'},floor).textContent=`가로 ${w}m`;
+ E('line',{x1:w+.55,y1:0,x2:w+.55,y2:h,stroke:'#446779','stroke-width':.035});E('line',{x1:w+.36,y1:0,x2:w+.75,y2:0,stroke:'#446779','stroke-width':.035});E('line',{x1:w+.36,y1:h,x2:w+.75,y2:h,stroke:'#446779','stroke-width':.035});E('text',{x:w+.8,y:h/2,transform:`rotate(90 ${w+.8} ${h/2})`,'text-anchor':'middle','font-size':.38,class:'mark'},floor).textContent=`세로 ${h}m`;
+ for(let i=0;i<=w;i+=5)E('text',{x:i,y:h+.38,'text-anchor':'middle','font-size':.23,class:'mark'},floor).textContent=i+'m';
+ for(let o of d.items||[]){let spec=cat()[o.kind]||['시설','#a5d2be'];let angle=+o.rotation||0;let cx=+o.x+ +o.w/2,cy=+o.y+ +o.h/2;
+ let g=E('g',{'data-id':o.id,class:'item',transform:`rotate(${angle} ${cx} ${cy})`});E('rect',{x:o.x,y:o.y,width:o.w,height:o.h,rx:.06,fill:spec[1],class:'outline'},g);
+ const size=Math.min(o.w*.48,o.h*.55,1.45);if(size>.18)icon(o.kind,g,cx,cy-.04,size);
+ if(o.w>=1 && o.h>=.8){let t=E('text',{x:cx,y:+o.y+ +o.h-.17,'text-anchor':'middle','font-size':Math.min(.31,o.w/(String(spec[0]).length*.68)),class:'itemLabel'},g);t.textContent=spec[0]}
+ g.addEventListener('pointerdown',ev=>{ev.stopPropagation();selection=o.id;begin(ev,{type:'move',id:o.id,startX:+o.x,startY:+o.y,w:+o.w,h:+o.h},floor)});
+ if(selection===o.id){E('rect',{x:o.x,y:o.y,width:o.w,height:o.h,class:'selectedRect'},g); E('line',{x1:cx,y1:o.y,x2:cx,y2:o.y-.65,stroke:'#0b916d','stroke-width':.04,'pointer-events':'none'},g);let knob=E('circle',{cx:cx,cy:o.y-.72,r:.16,class:'rotateHandle'},g);knob.addEventListener('pointerdown',ev=>{ev.stopPropagation();begin(ev,{type:'rotate',id:o.id,center:{x:cx,y:cy},oldAngle:angle},floor)})}}
+ floor.onpointerdown=ev=>{if(gesture)return;let pt=loc(ev);if(pt.x<0||pt.x>w||pt.y<0||pt.y>h)return;if(pending){let sp=cat()[pending];if(sp){let iw=+sp[2][0],ih=+sp[2][1];emit({type:'add',kind:pending,x:snap(clamp(pt.x-iw/2,0,w-iw)),y:snap(clamp(pt.y-ih/2,0,h-ih))});pending=null;renderPalette()}}else{selection=null;render()}};
+ const o=(d.items||[]).find(x=>x.id===selection);status.textContent=o?`${(cat()[o.kind]||['시설'])[0]} · ${o.w} × ${o.h}m · ${Math.round(o.rotation||0)}°`:(pending?'강당을 클릭해 시설을 배치하세요':'선택 시설 없음');height()}
+function begin(ev,info,src){if(ev.button!==0)return;ev.preventDefault();ev.stopPropagation();let pt=loc(ev);gesture={...info,initial:pt,source:src,ptr:ev.pointerId,moved:false};try{src.setPointerCapture(ev.pointerId)}catch(_){};if(info.type==='new'){pending=info.kind;src.classList.add('active');ghost=document.createElement('div');ghost.className='ghost';ghost.textContent=cat()[info.kind]?.[0]||'시설';document.body.appendChild(ghost);ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px'}document.addEventListener('pointermove',move);document.addEventListener('pointerup',finish,{once:true});document.addEventListener('pointercancel',cancel,{once:true})}
+function move(ev){if(!gesture)return;let g=gesture;if(Math.hypot(ev.clientX-(g.lastClientX??ev.clientX),ev.clientY-(g.lastClientY??ev.clientY))>3)g.moved=true;g.lastClientX=ev.clientX;g.lastClientY=ev.clientY;if(g.type==='new'){if(ghost){ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px'}return}
+ let p=loc(ev),dx=p.x-g.initial.x,dy=p.y-g.initial.y,obj=(room().items||[]).find(x=>x.id===g.id);if(!obj)return;let el=floor.querySelector(`[data-id="${g.id}"]`);if(!el)return;
+ if(g.type==='move'){let x=clamp(snap(g.startX+dx),-.25,room().room_w-.25),y=clamp(snap(g.startY+dy),-.25,room().room_h-.25);let centerx=obj.x+obj.w/2,centery=obj.y+obj.h/2;el.setAttribute('transform',`translate(${x-obj.x} ${y-obj.y}) rotate(${obj.rotation||0} ${centerx} ${centery})`);g.preview={x,y,w:obj.w,h:obj.h,rotation:obj.rotation||0}}
+ if(g.type==='rotate'){const a=(Math.atan2(p.y-g.center.y,p.x-g.center.x)-Math.atan2(g.initial.y-g.center.y,g.initial.x-g.center.x))*180/Math.PI;let rotation=(g.oldAngle+a+3600)%360;g.preview={...obj,rotation};let cx=obj.x+obj.w/2,cy=obj.y+obj.h/2;el.setAttribute('transform',`rotate(${rotation} ${cx} ${cy})`);status.textContent=`회전: ${Math.round(rotation)}°`}
+
+}
+function finish(ev){if(!gesture)return;let g=gesture,pt=loc(ev),bounds=floor.getBoundingClientRect();let inside=ev.clientX>=bounds.left&&ev.clientX<=bounds.right&&ev.clientY>=bounds.top&&ev.clientY<=bounds.bottom&&pt.x>=0&&pt.x<=room().room_w&&pt.y>=0&&pt.y<=room().room_h;
+ if(g.type==='new'){if(inside){let spec=cat()[g.kind];if(spec){let w=+spec[2][0],h=+spec[2][1];emit({type:'add',kind:g.kind,x:snap(clamp(pt.x-w/2,0,Math.max(0,room().room_w-w))),y:snap(clamp(pt.y-h/2,0,Math.max(0,room().room_h-h)))});pending=null}}}else if(g.preview){emit({type:'transform',id:g.id,...g.preview})}
+ clearGesture();render()}
+function clearGesture(){if(!gesture)return;try{gesture.source.releasePointerCapture(gesture.ptr)}catch(_){};document.removeEventListener('pointermove',move);gesture.source.classList?.remove('active');ghost?.remove();ghost=null;gesture=null}
+function cancel(){clearGesture();render()}
+function rotate(delta){let obj=(room().items||[]).find(x=>x.id===selection);if(obj)emit({type:'transform',id:selection,x:obj.x,y:obj.y,w:obj.w,h:obj.h,rotation:((+obj.rotation||0)+delta+360)%360})}
+document.querySelector('#rotateLeft').onclick=()=>rotate(-15);document.querySelector('#rotateRight').onclick=()=>rotate(15);document.querySelector('#delete').onclick=()=>{if(selection!==null){emit({type:'delete',id:selection});selection=null}};document.querySelector('#unselect').onclick=()=>{selection=null;pending=null;render()};document.addEventListener('keydown',ev=>{if(['INPUT','TEXTAREA'].includes(ev.target.tagName))return;if((ev.key==='Delete'||ev.key==='Backspace')&&selection!==null){ev.preventDefault();document.querySelector('#delete').click()}});
+window.addEventListener('message',ev=>{if(ev.data?.type==='streamlit:render'){props=ev.data.args||props;if(selection!==null&&!room().items.some(x=>x.id===selection))selection=null;renderPalette();render()}});window.addEventListener('resize',()=>height());window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:componentReady',apiVersion:1},'*');renderPalette();render();
+</script></body></html>
